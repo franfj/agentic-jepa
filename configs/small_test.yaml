@@ -1,0 +1,35 @@
+# Tiny config for CPU testing — verifies the full pipeline runs end-to-end.
+
+model:
+  backbone: "gpt2"
+  latent_dim: 768
+  action_dim: 768
+  predictor_hidden: 128
+  predictor_heads: 4
+  predictor_layers: 1
+  max_length: 64
+
+ema:
+  momentum: 0.996
+  momentum_end: 1.0
+  warmup_steps: 5
+
+training:
+  batch_size: 2
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_steps: 2
+  max_steps: 10
+  log_every: 2
+  checkpoint_every: 5
+  output_dir: "outputs/small_test"
+
+planning:
+  top_k: 3
+
+wandb:
+  enabled: false
+  project: "agentic-jepa"
+  entity: null
+
+seed: 42

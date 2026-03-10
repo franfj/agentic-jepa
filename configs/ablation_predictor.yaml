@@ -1,0 +1,52 @@
+# Ablation: predictor layer depth (1, 2, 4 layers)
+# Run three times with --predictor-layers-override or modify predictor_layers below.
+# This file uses 2 layers as default; copy and edit for 1 and 4.
+
+# --- Variant: 1 layer ---
+# predictor_layers: 1
+
+# --- Variant: 2 layers (default) ---
+# predictor_layers: 2
+
+# --- Variant: 4 layers ---
+# predictor_layers: 4
+
+# To run all three variants programmatically, override predictor_layers via CLI
+# or use a sweep tool. The three configs are embedded below as separate documents.
+
+model:
+  backbone: "gpt2"
+  latent_dim: 768
+  action_dim: 768
+  predictor_hidden: 512
+  predictor_heads: 8
+  predictor_layers: 1  # Change to 2 or 4 for other variants
+  max_length: 128
+
+ema:
+  momentum: 0.996
+  momentum_end: 1.0
+  warmup_steps: 500
+
+training:
+  batch_size: 16
+  learning_rate: 5.0e-5
+  weight_decay: 0.05
+  warmup_steps: 200
+  max_steps: 5000
+  log_every: 50
+  checkpoint_every: 1000
+  output_dir: "outputs/ablation_predictor"
+
+planning:
+  top_k: 3
+
+wandb:
+  enabled: false
+  project: "agentic-jepa"
+  entity: null
+
+seed: 42
+
+# Ablation variants to run (for reference):
+# predictor_layers_variants: [1, 2, 4]

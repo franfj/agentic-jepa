@@ -1,0 +1,39 @@
+# Ablation: EMA momentum (0.99, 0.996, 0.999)
+# Run three times, changing ema.momentum below for each variant.
+
+model:
+  backbone: "gpt2"
+  latent_dim: 768
+  action_dim: 768
+  predictor_hidden: 512
+  predictor_heads: 8
+  predictor_layers: 2
+  max_length: 128
+
+ema:
+  momentum: 0.99  # Change to 0.996 or 0.999 for other variants
+  momentum_end: 1.0
+  warmup_steps: 500
+
+training:
+  batch_size: 16
+  learning_rate: 5.0e-5
+  weight_decay: 0.05
+  warmup_steps: 200
+  max_steps: 5000
+  log_every: 50
+  checkpoint_every: 1000
+  output_dir: "outputs/ablation_ema"
+
+planning:
+  top_k: 3
+
+wandb:
+  enabled: false
+  project: "agentic-jepa"
+  entity: null
+
+seed: 42
+
+# Ablation variants to run (for reference):
+# ema_momentum_variants: [0.99, 0.996, 0.999]

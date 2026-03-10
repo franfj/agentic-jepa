@@ -1,0 +1,25 @@
+# ============================================
+# AGENTIC-JEPA — Colab Commands (copy-paste)
+# ============================================
+
+# --- SETUP ---
+pip install -r requirements.txt
+
+# --- 1. VERIFY ENVIRONMENTS ---
+python -m src.benchmarks.verify_envs
+
+# --- 2. GENERATE TRAINING DATA (CPU, ~1 min) ---
+python -m src.data.generate_trajectories --output data/trajectories.jsonl
+
+# --- 3. SMOKE TEST (CPU, verify everything works) ---
+python -m src.train --config configs/small_test.yaml --data data/trajectories.jsonl
+
+# --- 4. TRAIN (GPU) ---
+python -m src.train --config configs/default.yaml --data data/trajectories.jsonl
+
+# --- 5. BENCHMARK (with trained model) ---
+python -m src.benchmarks.run_all --config configs/default.yaml --checkpoint outputs/default/best.pt
+
+# --- 6. ABLATIONS (optional, one at a time) ---
+python -m src.train --config configs/ablation_ema.yaml --data data/trajectories.jsonl
+python -m src.train --config configs/ablation_predictor.yaml --data data/trajectories.jsonl

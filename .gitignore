@@ -1,0 +1,8 @@
+outputs/
+data/*.jsonl
+*.pt
+*.bin
+wandb/
+__pycache__/
+.venv/
+.DS_Store
