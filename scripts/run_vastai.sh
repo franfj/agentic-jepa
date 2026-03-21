@@ -41,11 +41,10 @@ python -m src.train \
     --config configs/default.yaml \
     --data data/trajectories.jsonl
 
-# --- Train Llama 3.2 ---
-echo "[4/7] Training Llama 3.2 model..."
-huggingface-cli login --token "$HF_TOKEN" 2>/dev/null || true
+# --- Train Qwen2.5-1.5B ---
+echo "[4/7] Training Qwen2.5-1.5B model..."
 python -m src.train \
-    --config configs/llama.yaml \
+    --config configs/qwen.yaml \
     --data data/trajectories.jsonl
 
 # --- Benchmark GPT-2 ---
@@ -57,14 +56,14 @@ python -m src.benchmarks.run_all \
     --max-steps 50 \
     --output results/benchmark_gpt2.json
 
-# --- Benchmark Llama 3.2 ---
-echo "[6/7] Benchmarking Llama 3.2..."
+# --- Benchmark Qwen2.5-1.5B ---
+echo "[6/7] Benchmarking Qwen2.5-1.5B..."
 python -m src.benchmarks.run_all \
-    --checkpoint outputs/llama/best.pt \
-    --config configs/llama.yaml \
+    --checkpoint outputs/qwen/best.pt \
+    --config configs/qwen.yaml \
     --episodes 20 \
     --max-steps 50 \
-    --output results/benchmark_llama.json
+    --output results/benchmark_qwen.json
 
 # --- Visualize embeddings ---
 echo "[7/7] Generating embedding visualizations..."
@@ -76,14 +75,14 @@ python -m src.visualize_embeddings \
     --output-dir figures/gpt2
 
 python -m src.visualize_embeddings \
-    --checkpoint outputs/llama/best.pt \
-    --config configs/llama.yaml \
-    --output-dir figures/llama
+    --checkpoint outputs/qwen/best.pt \
+    --config configs/qwen.yaml \
+    --output-dir figures/qwen
 
 echo "========================================"
 echo "DONE! Results in:"
 echo "  results/benchmark_gpt2.json"
-echo "  results/benchmark_llama.json"
-echo "  figures/embedding_gpt2.png"
-echo "  figures/embedding_llama.png"
+echo "  results/benchmark_qwen.json"
+echo "  figures/gpt2/embedding_space.png"
+echo "  figures/qwen/embedding_space.png"
 echo "========================================"

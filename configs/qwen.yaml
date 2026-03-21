@@ -1,12 +1,12 @@
 model:
-  backbone: "meta-llama/Llama-3.2-1B"
-  latent_dim: 2048
-  action_dim: 2048
-  predictor_hidden: 1024
+  backbone: "Qwen/Qwen2.5-1.5B"
+  latent_dim: 1536
+  action_dim: 1536
+  predictor_hidden: 768
   predictor_heads: 8
   predictor_layers: 2
   max_length: 128
-  quantize: true
+  quantize: false
 
 ema:
   momentum: 0.996
