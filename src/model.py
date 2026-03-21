@@ -1,14 +1,14 @@
 """Agentic-JEPA model: JEPA world model for software agents.
 
-Uses a decoder-only LLM (GPT-2) as backbone, extracting last-token embeddings
-as state/action representations — aligned with how agentic AI systems work.
+Uses a decoder-only LLM as backbone (GPT-2, Llama, etc.), extracting last-token
+embeddings as state/action representations — aligned with how agentic AI systems work.
 """
 
 import copy
 
 import torch
 import torch.nn as nn
-from transformers import GPT2Model
+from transformers import AutoModel, AutoConfig, BitsAndBytesConfig
 
 
 def _last_token_embedding(hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
@@ -34,16 +34,38 @@ def _last_token_embedding(hidden_states: torch.Tensor, attention_mask: torch.Ten
     return hidden_states[batch_idx, last_idx]
 
 
-class StateEncoder(nn.Module):
-    """Encodes task context text into a latent state vector using GPT-2."""
+def _get_hidden_size(config: AutoConfig) -> int:
+    """Extract hidden size from model config (varies by architecture)."""
+    for attr in ("hidden_size", "n_embd", "d_model"):
+        if hasattr(config, attr):
+            return getattr(config, attr)
+    raise ValueError(f"Cannot determine hidden size from config: {type(config)}")
 
-    def __init__(self, backbone: str = "gpt2") -> None:
+
+def _load_backbone(backbone: str, quantize: bool = False) -> AutoModel:
+    """Load a backbone model, optionally with 4-bit quantization."""
+    kwargs = {}
+    if quantize:
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+        )
+        kwargs["device_map"] = "auto"
+    return AutoModel.from_pretrained(backbone, **kwargs)
+
+
+class StateEncoder(nn.Module):
+    """Encodes task context text into a latent state vector."""
+
+    def __init__(self, backbone: str = "gpt2", quantize: bool = False) -> None:
         super().__init__()
-        self.encoder = GPT2Model.from_pretrained(backbone)
+        self.encoder = _load_backbone(backbone, quantize=quantize)
+        self._hidden_size = _get_hidden_size(self.encoder.config)
 
     @property
     def hidden_size(self) -> int:
-        return self.encoder.config.n_embd
+        return self._hidden_size
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """Encode text to last-token embedding. Shape: (B, D)."""
@@ -57,13 +79,14 @@ class ActionEncoder(nn.Module):
     Shares the same backbone architecture but is independently parameterized.
     """
 
-    def __init__(self, backbone: str = "gpt2") -> None:
+    def __init__(self, backbone: str = "gpt2", quantize: bool = False) -> None:
         super().__init__()
-        self.encoder = GPT2Model.from_pretrained(backbone)
+        self.encoder = _load_backbone(backbone, quantize=quantize)
+        self._hidden_size = _get_hidden_size(self.encoder.config)
 
     @property
     def hidden_size(self) -> int:
-        return self.encoder.config.n_embd
+        return self._hidden_size
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """Encode action text to last-token embedding. Shape: (B, D)."""
@@ -128,10 +151,11 @@ class AgenticJEPAModel(nn.Module):
         predictor_hidden: int = 512,
         predictor_heads: int = 8,
         predictor_layers: int = 2,
+        quantize: bool = False,
     ) -> None:
         super().__init__()
-        self.state_encoder = StateEncoder(backbone)
-        self.action_encoder = ActionEncoder(backbone)
+        self.state_encoder = StateEncoder(backbone, quantize=quantize)
+        self.action_encoder = ActionEncoder(backbone, quantize=quantize)
         self.target_encoder = copy.deepcopy(self.state_encoder)
 
         # Freeze target encoder

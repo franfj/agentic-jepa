@@ -162,12 +162,16 @@ def run_benchmark(
         backbone = model_cfg.get("backbone", "gpt2")
         max_length = model_cfg.get("max_length", 128)
 
+        quantize = model_cfg.get("quantize", False)
         model = AgenticJEPAModel(
             backbone=backbone,
             predictor_hidden=model_cfg.get("predictor_hidden", 512),
             predictor_heads=model_cfg.get("predictor_heads", 8),
             predictor_layers=model_cfg.get("predictor_layers", 2),
-        ).to(device)
+            quantize=quantize,
+        )
+        if not quantize:
+            model = model.to(device)
 
         ckpt = torch.load(checkpoint, map_location=device, weights_only=True)
         model.load_state_dict(ckpt["model"])

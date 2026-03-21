@@ -94,12 +94,16 @@ def train(config: dict, data_path: str) -> None:
 
     # --- Model ---
     model_cfg = config["model"]
+    quantize = model_cfg.get("quantize", False)
     model = AgenticJEPAModel(
         backbone=model_cfg["backbone"],
         predictor_hidden=model_cfg["predictor_hidden"],
         predictor_heads=model_cfg["predictor_heads"],
         predictor_layers=model_cfg["predictor_layers"],
-    ).to(device)
+        quantize=quantize,
+    )
+    if not quantize:
+        model = model.to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
