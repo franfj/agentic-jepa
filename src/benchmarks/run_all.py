@@ -14,16 +14,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import torch
 import yaml
 from transformers import AutoTokenizer
 
 from ..model import AgenticJEPAModel
-from .baselines import BaseAgent, GPT2VanillaAgent, GreedyTextAgent, JEPAPlanningAgent, OracleAgent, RandomAgent
+from .baselines import BaseAgent, GPT2VanillaAgent, GreedyTextAgent, JEPAPlanningAgent, LLMBaselineAgent, OracleAgent, RandomAgent
 from .environments import TRAIN_ENVIRONMENTS, TEST_ENVIRONMENTS, TextEnvironment, make_all, make_train, make_test
 from .metrics import EpisodeLog, MetricResult, compute_episode_metrics
 
@@ -80,6 +82,7 @@ def build_agents(
     device: torch.device | None = None,
     seed: int = 0,
     gpt2_vanilla_agent: GPT2VanillaAgent | None = None,
+    llm_agent: LLMBaselineAgent | None = None,
 ) -> list[BaseAgent]:
     """Build the standard set of agents for evaluation.
 
@@ -91,6 +94,7 @@ def build_agents(
         device: Torch device for the JEPA agent.
         seed: Random seed for the random agent.
         gpt2_vanilla_agent: Pre-created GPT2VanillaAgent to reuse across calls.
+        llm_agent: Pre-created LLMBaselineAgent to reuse across calls (optional).
 
     Returns:
         List of agent instances.
@@ -103,6 +107,8 @@ def build_agents(
         agents.append(gpt2_vanilla_agent)
     else:
         agents.append(GPT2VanillaAgent(device=device))
+    if llm_agent is not None:
+        agents.append(llm_agent)
     if model is not None and tokenizer is not None:
         agents.append(
             JEPAPlanningAgent(
@@ -198,6 +204,14 @@ def run_benchmark(
     # Create GPT2VanillaAgent once (avoids reloading the model per episode)
     gpt2_vanilla = GPT2VanillaAgent(device=device)
 
+    # Create LLM baseline agent if API key is available
+    llm_agent: LLMBaselineAgent | None = None
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        llm_agent = LLMBaselineAgent()
+        logger.info("ANTHROPIC_API_KEY found; including LLM (Haiku) baseline.")
+    else:
+        logger.info("ANTHROPIC_API_KEY not set; skipping LLM baseline.")
+
     for seed in range(episodes):
         envs = make_all(seed=seed)
 
@@ -211,6 +225,7 @@ def run_benchmark(
                 device=device,
                 seed=seed,
                 gpt2_vanilla_agent=gpt2_vanilla,
+                llm_agent=llm_agent,
             )
 
             for agent in agents:
@@ -237,7 +252,7 @@ def run_benchmark(
                     1.0 if metrics.success else 0.0
                 )
 
-    # Aggregate means
+    # Aggregate means and standard deviations
     final: dict[str, dict[str, dict[str, float]]] = defaultdict(
         lambda: defaultdict(dict)
     )
@@ -247,10 +262,14 @@ def run_benchmark(
                 if key.startswith("_episodes_"):
                     metric_name = key[len("_episodes_"):]
                     assert isinstance(values, list)
-                    final[agent_name][env_name][metric_name] = sum(values) / len(values)
+                    arr = np.array(values)
+                    final[agent_name][env_name][metric_name] = float(arr.mean())
+                    final[agent_name][env_name][f"{metric_name}_std"] = float(arr.std())
                 elif key == "_successes":
                     assert isinstance(values, list)
-                    final[agent_name][env_name]["success_rate"] = sum(values) / len(values)
+                    arr = np.array(values)
+                    final[agent_name][env_name]["success_rate"] = float(arr.mean())
+                    final[agent_name][env_name]["success_rate_std"] = float(arr.std())
 
     # Wandb logging
     if wandb_log:
@@ -285,7 +304,7 @@ def print_results_table(results: dict[str, dict[str, dict[str, float]]]) -> None
     # Header
     header = f"{'Agent':<15} {'Environment':<25}"
     for m in metric_names:
-        header += f" {m:<14}"
+        header += f" {m:<20}"
     print("\n" + "=" * len(header))
     print("AGENTIC-JEPA BENCHMARK RESULTS")
     print("=" * len(header))
@@ -304,7 +323,9 @@ def print_results_table(results: dict[str, dict[str, dict[str, float]]]) -> None
                 row = f"{agent_name:<15} {env_name:<25}"
                 for m in metric_names:
                     val = metrics.get(m, float("nan"))
-                    row += f" {val:<14.3f}"
+                    std = metrics.get(f"{m}_std", float("nan"))
+                    cell = f"{val:.3f}\u00b1{std:.3f}"
+                    row += f" {cell:<20}"
                 print(row)
             print("-" * len(header))
 
@@ -320,7 +341,9 @@ def print_results_table(results: dict[str, dict[str, dict[str, float]]]) -> None
                 row = f"{agent_name:<15} {env_name:<25}"
                 for m in metric_names:
                     val = metrics.get(m, float("nan"))
-                    row += f" {val:<14.3f}"
+                    std = metrics.get(f"{m}_std", float("nan"))
+                    cell = f"{val:.3f}\u00b1{std:.3f}"
+                    row += f" {cell:<20}"
                 print(row)
             print("-" * len(header))
 
@@ -335,9 +358,9 @@ def print_results_table(results: dict[str, dict[str, dict[str, float]]]) -> None
         print("-" * 80)
         summary_header = f"{'Agent':<15}"
         for m in metric_names:
-            summary_header += f" {m:<14}"
+            summary_header += f" {m:<20}"
         print(summary_header)
-        print("-" * 80)
+        print("-" * 100)
 
         for agent_name in agent_names:
             row = f"{agent_name:<15}"
@@ -347,8 +370,17 @@ def print_results_table(results: dict[str, dict[str, dict[str, float]]]) -> None
                     for env_name in section_env_list
                     if env_name in results.get(agent_name, {})
                 ]
-                mean_val = sum(vals) / len(vals) if vals else float("nan")
-                row += f" {mean_val:<14.3f}"
+                std_vals = [
+                    results[agent_name][env_name].get(f"{m}_std", float("nan"))
+                    for env_name in section_env_list
+                    if env_name in results.get(agent_name, {})
+                ]
+                arr = np.array(vals)
+                arr_std = np.array(std_vals)
+                mean_val = float(arr.mean()) if len(vals) else float("nan")
+                mean_std = float(arr_std.mean()) if len(std_vals) else float("nan")
+                cell = f"{mean_val:.3f}\u00b1{mean_std:.3f}"
+                row += f" {cell:<20}"
             print(row)
         print()
 

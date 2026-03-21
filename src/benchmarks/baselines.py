@@ -188,6 +188,59 @@ class GPT2VanillaAgent(BaseAgent):
         return valid_actions[best_idx]
 
 
+class LLMBaselineAgent(BaseAgent):
+    """Zero-shot LLM baseline using Anthropic's Claude Haiku.
+
+    Sends the current state, goal, and valid actions to the model and asks it
+    to pick the best action. Requires the ``anthropic`` package and a valid
+    ``ANTHROPIC_API_KEY`` environment variable.
+    """
+
+    def __init__(self, model: str = "claude-haiku-4-5-20251001") -> None:
+        import anthropic
+
+        self._client = anthropic.Anthropic()
+        self._model = model
+
+    @property
+    def name(self) -> str:
+        return "LLM (Haiku)"
+
+    def select_action(self, state: str, valid_actions: list[str], goal: str) -> str:
+        numbered = "\n".join(f"{i}: {a}" for i, a in enumerate(valid_actions))
+        prompt = (
+            f"You are an agent navigating an environment.\n\n"
+            f"Current state: {state}\n"
+            f"Goal: {goal}\n\n"
+            f"Valid actions:\n{numbered}\n\n"
+            f"Pick the best action to make progress toward the goal. "
+            f"Respond with ONLY the action number."
+        )
+
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=16,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        text = response.content[0].text.strip()
+        # Parse the number from the response
+        try:
+            idx = int(text)
+            if 0 <= idx < len(valid_actions):
+                return valid_actions[idx]
+        except ValueError:
+            pass
+
+        # Fallback: check if the response matches an action directly
+        for action in valid_actions:
+            if action in text:
+                return action
+
+        # Last resort: return first action
+        return valid_actions[0]
+
+
 class OracleAgent(BaseAgent):
     """Always picks the optimal action. Serves as the upper bound.
 
