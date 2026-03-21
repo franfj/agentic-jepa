@@ -189,22 +189,22 @@ class GPT2VanillaAgent(BaseAgent):
 
 
 class LLMBaselineAgent(BaseAgent):
-    """Zero-shot LLM baseline using Anthropic's Claude Haiku.
+    """Zero-shot LLM baseline using OpenAI's GPT-4o-mini.
 
     Sends the current state, goal, and valid actions to the model and asks it
-    to pick the best action. Requires the ``anthropic`` package and a valid
-    ``ANTHROPIC_API_KEY`` environment variable.
+    to pick the best action. Requires the ``openai`` package and a valid
+    ``OPENAI_API_KEY`` environment variable.
     """
 
-    def __init__(self, model: str = "claude-haiku-4-5-20251001") -> None:
-        import anthropic
+    def __init__(self, model: str = "gpt-4o-mini") -> None:
+        from openai import OpenAI
 
-        self._client = anthropic.Anthropic()
+        self._client = OpenAI()
         self._model = model
 
     @property
     def name(self) -> str:
-        return "LLM (Haiku)"
+        return "LLM (GPT-4o-mini)"
 
     def select_action(self, state: str, valid_actions: list[str], goal: str) -> str:
         numbered = "\n".join(f"{i}: {a}" for i, a in enumerate(valid_actions))
@@ -217,13 +217,13 @@ class LLMBaselineAgent(BaseAgent):
             f"Respond with ONLY the action number."
         )
 
-        response = self._client.messages.create(
+        response = self._client.chat.completions.create(
             model=self._model,
             max_tokens=16,
             messages=[{"role": "user", "content": prompt}],
         )
 
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         # Parse the number from the response
         try:
             idx = int(text)

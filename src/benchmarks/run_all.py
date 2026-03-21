@@ -210,11 +210,11 @@ def run_benchmark(
 
     # Create LLM baseline agent if API key is available
     llm_agent: LLMBaselineAgent | None = None
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if os.environ.get("OPENAI_API_KEY"):
         llm_agent = LLMBaselineAgent()
-        logger.info("ANTHROPIC_API_KEY found; including LLM (Haiku) baseline.")
+        logger.info("OPENAI_API_KEY found; including LLM (GPT-4o-mini) baseline.")
     else:
-        logger.info("ANTHROPIC_API_KEY not set; skipping LLM baseline.")
+        logger.info("OPENAI_API_KEY not set; skipping LLM baseline.")
 
     for seed in range(episodes):
         envs = make_all(seed=seed)

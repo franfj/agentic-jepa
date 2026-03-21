@@ -19,7 +19,7 @@ echo "========================================"
 
 # --- Setup ---
 echo "[1/7] Installing dependencies..."
-pip install -q transformers torch pyyaml scikit-learn numpy matplotlib bitsandbytes accelerate anthropic
+pip install -q transformers torch pyyaml scikit-learn numpy matplotlib bitsandbytes accelerate openai
 
 # Clone repo if not already present
 if [ ! -f "src/model.py" ]; then
