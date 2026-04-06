@@ -1,5 +1,5 @@
 # ============================================
-# AGENTIC-JEPA — Colab Commands (copy-paste)
+# AGENTIC-JEPA v2 — Colab Commands (copy-paste)
 # ============================================
 
 # --- SETUP ---
@@ -8,18 +8,36 @@ pip install -r requirements.txt
 # --- 1. VERIFY ENVIRONMENTS ---
 python -m src.benchmarks.verify_envs
 
-# --- 2. GENERATE TRAINING DATA (CPU, ~1 min) ---
-python -m src.data.generate_trajectories --output data/trajectories.jsonl
+# --- 2. GENERATE TRAINING DATA (v2: 8 train environments) ---
+python -m src.data.generate_trajectories \
+    --output data/trajectories_v2.jsonl \
+    --oracle-episodes 200 \
+    --random-episodes 400
 
 # --- 3. SMOKE TEST (CPU, verify everything works) ---
-python -m src.train --config configs/small_test.yaml --data data/trajectories.jsonl
+python -m src.train --config configs/small_test.yaml --data data/trajectories_v2.jsonl
 
-# --- 4. TRAIN (GPU) ---
-python -m src.train --config configs/default.yaml --data data/trajectories.jsonl
+# --- 4. TRAIN (GPU, ~20 min on T4 with 2000 steps) ---
+python -m src.train --config configs/default.yaml --data data/trajectories_v2.jsonl
 
-# --- 5. BENCHMARK (with trained model) ---
-python -m src.benchmarks.run_all --config configs/default.yaml --checkpoint outputs/default/best.pt
+# --- 5. BENCHMARK with multi-step planning ---
+python -m src.benchmarks.run_all \
+    --config configs/default.yaml \
+    --checkpoint outputs/default/best.pt \
+    --rollout-depths 1 2 3 5 \
+    --output results/v2_default.json
 
-# --- 6. ABLATIONS (optional, one at a time) ---
-python -m src.train --config configs/ablation_ema.yaml --data data/trajectories.jsonl
-python -m src.train --config configs/ablation_predictor.yaml --data data/trajectories.jsonl
+# --- 6. ABLATION SWEEP (all variants, takes ~2-3 hours on T4) ---
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation all
+
+# --- 6b. Individual ablations ---
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation ema
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation predictor_depth
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation predictor_width
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation backbone
+
+# --- 7. LIST all ablation variants ---
+python scripts/run_ablations.py --list
+
+# --- 8. BENCHMARK existing checkpoints only (skip training) ---
+python scripts/run_ablations.py --data data/trajectories_v2.jsonl --ablation all --benchmark-only
