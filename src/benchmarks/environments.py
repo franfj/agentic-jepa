@@ -1718,11 +1718,640 @@ class ExperimentPipeline(TextEnvironment):
 
 
 # ======================================================================
+# Non-linear environments (branching paths)
+# ======================================================================
+
+
+class ProjectPlanning(TextEnvironment):
+    """Plan a software project with multiple valid paths.
+
+    This environment has BRANCHING: after gathering requirements, the agent
+    can choose either a technical design path OR a prototype-first path.
+    Both paths converge at the implementation stage.
+
+    Path A (design-first, 6 steps):
+        gather_requirements -> write_tech_spec -> design_architecture
+        -> implement_features -> run_qa -> release
+    Path B (prototype-first, 6 steps):
+        gather_requirements -> build_prototype -> collect_feedback
+        -> implement_features -> run_qa -> release
+    """
+
+    # State graph (not a linear chain)
+    GRAPH: dict[str, dict[str, str]] = {
+        "start": {
+            "Gather requirements from stakeholders through interviews and surveys": "requirements_done",
+        },
+        "requirements_done": {
+            "Write a detailed technical specification document with system diagrams": "tech_spec_done",
+            "Build a quick interactive prototype to validate the core user flow": "prototype_done",
+        },
+        "tech_spec_done": {
+            "Design the system architecture with component diagrams and API contracts": "architecture_done",
+        },
+        "prototype_done": {
+            "Collect user feedback on the prototype and document required changes": "feedback_done",
+        },
+        "architecture_done": {
+            "Implement the core features following the technical specification": "implemented",
+        },
+        "feedback_done": {
+            "Implement the core features incorporating the user feedback": "implemented",
+        },
+        "implemented": {
+            "Run the full quality assurance test suite and fix critical bugs": "qa_done",
+        },
+        "qa_done": {
+            "Release the software to production with monitoring enabled": "released",
+        },
+    }
+
+    DISTRACTORS: dict[str, list[str]] = {
+        "start": [
+            "Start coding immediately without understanding the requirements",
+            "Schedule a team offsite to brainstorm ideas",
+            "Research competing products for inspiration",
+            "Set up the development environment and CI pipeline",
+            "Create a detailed project timeline with Gantt charts",
+        ],
+        "requirements_done": [
+            "Rewrite all requirements in a different format",
+            "Hire additional team members before proceeding",
+            "Conduct a market analysis of competing solutions",
+        ],
+        "tech_spec_done": [
+            "Rewrite the specification using a different template",
+            "Get legal review of all technical decisions",
+            "Benchmark three different database solutions",
+            "Create a detailed cost analysis for cloud infrastructure",
+        ],
+        "prototype_done": [
+            "Polish the prototype with pixel-perfect design",
+            "Present the prototype at a company all-hands meeting",
+            "Rewrite the prototype in a different programming language",
+            "Add analytics tracking to the prototype",
+        ],
+        "architecture_done": [
+            "Refactor the architecture to use microservices",
+            "Write comprehensive documentation for every component",
+            "Set up monitoring dashboards before writing any code",
+            "Conduct a security review of the architecture",
+        ],
+        "feedback_done": [
+            "Conduct another round of user interviews",
+            "Redesign the entire user interface from scratch",
+            "A/B test two different feedback implementation strategies",
+            "Create a detailed feature prioritization matrix",
+        ],
+        "implemented": [
+            "Add performance optimizations before testing",
+            "Write a user manual for the new features",
+            "Refactor the codebase for better maintainability",
+            "Set up automated deployment pipelines",
+        ],
+        "qa_done": [
+            "Run an additional round of load testing",
+            "Get executive sign-off before release",
+            "Create a rollback plan in case of issues",
+            "Write release notes for the marketing team",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "start": "New project assigned: build a customer feedback dashboard. No planning has been done yet. Team of 4 engineers available.",
+        "requirements_done": "Requirements gathered: 12 user stories identified, 3 key personas defined, success metrics established. Two paths forward: design-first or prototype-first.",
+        "tech_spec_done": "Technical specification complete: REST API with 8 endpoints, React frontend, PostgreSQL database. Component dependencies mapped. Ready for architecture design.",
+        "prototype_done": "Interactive prototype built: clickable mockup covering the 3 main user flows. Ready for stakeholder feedback before full implementation.",
+        "architecture_done": "System architecture designed: 3-tier architecture with caching layer, event-driven notifications, and role-based access control. Ready for implementation.",
+        "feedback_done": "Feedback collected: 15 stakeholders tested the prototype. Key changes: simplify the main dashboard, add export functionality, improve mobile layout. Ready for implementation.",
+        "implemented": "Core features implemented: all user stories completed, 89% test coverage, code reviewed. Ready for QA testing.",
+        "qa_done": "QA complete: 156 test cases passed, 3 critical bugs fixed, performance benchmarks met. Ready for production release.",
+        "released": "Software released to production. Monitoring shows stable performance. 94% of target metrics met on day one. Project complete.",
+    }
+
+    # Oracle prefers path A (design-first) as the "optimal" path
+    ORACLE_PATH: dict[str, str] = {
+        "start": "Gather requirements from stakeholders through interviews and surveys",
+        "requirements_done": "Write a detailed technical specification document with system diagrams",
+        "tech_spec_done": "Design the system architecture with component diagrams and API contracts",
+        "architecture_done": "Implement the core features following the technical specification",
+        "implemented": "Run the full quality assurance test suite and fix critical bugs",
+        "qa_done": "Release the software to production with monitoring enabled",
+    }
+
+    def __init__(self, seed: int = 0) -> None:
+        super().__init__(seed)
+        self._current_node = "start"
+
+    @property
+    def name(self) -> str:
+        return "ProjectPlanning"
+
+    @property
+    def goal(self) -> str:
+        return "software project released to production"
+
+    @property
+    def oracle_steps(self) -> int:
+        return 6
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._current_node = "start"
+        self._state = self.STATE_DESCRIPTIONS[self._current_node]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        valid_transitions = list(self.GRAPH.get(self._current_node, {}).keys())
+        distractors = self.DISTRACTORS.get(self._current_node, [])
+        actions = valid_transitions + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.ORACLE_PATH.get(self._current_node)
+
+    def _execute(self, action: str) -> StepResult:
+        transitions = self.GRAPH.get(self._current_node, {})
+        if action in transitions:
+            self._current_node = transitions[action]
+            done = self._current_node == "released"
+            return StepResult(state=self.STATE_DESCRIPTIONS[self._current_node], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the project.)",
+            done=False,
+        )
+
+
+class TroubleshootingGuide(TextEnvironment):
+    """Diagnose and fix a system issue with branching diagnostic paths.
+
+    The agent must choose between checking hardware OR software first.
+    Each path leads to different intermediate states but converges at the fix.
+
+    Path A (hardware-first, 5 steps):
+        check_hardware -> inspect_connections -> fix_hardware_issue
+        -> verify_system -> document_resolution
+    Path B (software-first, 5 steps):
+        check_software -> analyze_logs -> fix_software_issue
+        -> verify_system -> document_resolution
+    """
+
+    GRAPH: dict[str, dict[str, str]] = {
+        "start": {
+            "Check the hardware components for visible damage or loose connections": "hardware_checked",
+            "Check the software logs and system configuration for errors": "software_checked",
+        },
+        "hardware_checked": {
+            "Inspect all cable connections and reseat components that appear loose": "connections_inspected",
+        },
+        "software_checked": {
+            "Analyze the error logs to identify the root cause of the failure": "logs_analyzed",
+        },
+        "connections_inspected": {
+            "Replace the faulty hardware component and test the connection": "hardware_fixed",
+        },
+        "logs_analyzed": {
+            "Apply the software patch that addresses the identified error": "software_fixed",
+        },
+        "hardware_fixed": {
+            "Run a full system verification test to confirm the fix works": "verified",
+        },
+        "software_fixed": {
+            "Run a full system verification test to confirm the fix works": "verified",
+        },
+        "verified": {
+            "Document the resolution steps and update the knowledge base": "documented",
+        },
+    }
+
+    DISTRACTORS: dict[str, list[str]] = {
+        "start": [
+            "Restart the entire system and hope the problem goes away",
+            "Escalate the issue to a senior technician immediately",
+            "Order replacement parts before diagnosing the problem",
+            "Search the internet for similar issues reported by other users",
+        ],
+        "hardware_checked": [
+            "Run a full diagnostic scan on all hardware components",
+            "Replace all cables preventatively",
+            "Check the power supply voltage with a multimeter",
+            "Photograph the hardware configuration for documentation",
+        ],
+        "software_checked": [
+            "Reinstall the operating system from scratch",
+            "Roll back to the previous software version",
+            "Run a virus scan on the entire system",
+            "Clear all temporary files and caches",
+        ],
+        "connections_inspected": [
+            "Order additional spare parts for future issues",
+            "Run a stress test on the hardware components",
+            "Upgrade the firmware on all connected devices",
+            "Document the current hardware configuration",
+        ],
+        "logs_analyzed": [
+            "Collect additional logs from related services",
+            "Set up real-time log monitoring for future issues",
+            "Compare logs with baseline performance metrics",
+            "Forward the logs to the development team for review",
+        ],
+        "hardware_fixed": [
+            "Run additional stress tests for 24 hours",
+            "Replace preventatively other aging components",
+            "Update the asset management database",
+            "Schedule a follow-up inspection for next week",
+        ],
+        "software_fixed": [
+            "Run additional regression tests on related modules",
+            "Set up automated alerts for similar errors",
+            "Review the change management process",
+            "Create a backup of the current configuration",
+        ],
+        "verified": [
+            "Run the verification test a second time for confidence",
+            "Benchmark system performance against historical data",
+            "Notify all affected users about the resolution",
+            "Schedule preventive maintenance for next month",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "start": "System failure reported: the production server is unresponsive. Users cannot access the application. No diagnosis has been performed yet.",
+        "hardware_checked": "Hardware inspection complete: no visible physical damage. One network cable appears slightly loose at the switch port. CPU and memory indicators are normal.",
+        "software_checked": "Software check complete: system logs show repeated connection timeout errors starting 3 hours ago. Configuration files appear intact but a recent update may have introduced a bug.",
+        "connections_inspected": "All connections inspected: the loose network cable was the primary suspect. The cable was reseated but the RJ45 connector shows signs of wear and may need replacement.",
+        "logs_analyzed": "Log analysis complete: the timeout errors correlate with a configuration change made during yesterday's maintenance window. The DNS resolver setting was incorrectly modified.",
+        "hardware_fixed": "Hardware fix applied: the worn network cable has been replaced with a new Cat6 cable. Initial connectivity test shows the link is stable at 1Gbps.",
+        "software_fixed": "Software fix applied: the DNS resolver configuration has been corrected to point to the proper internal DNS servers. Service restart completed successfully.",
+        "verified": "System verification complete: all services are responding normally. Application is accessible to users. Latency and throughput metrics are within expected ranges.",
+        "documented": "Resolution documented: root cause, diagnostic steps, and fix have been recorded in the knowledge base. Ticket closed. Troubleshooting complete.",
+    }
+
+    ORACLE_PATH: dict[str, str] = {
+        "start": "Check the hardware components for visible damage or loose connections",
+        "hardware_checked": "Inspect all cable connections and reseat components that appear loose",
+        "connections_inspected": "Replace the faulty hardware component and test the connection",
+        "hardware_fixed": "Run a full system verification test to confirm the fix works",
+        "verified": "Document the resolution steps and update the knowledge base",
+    }
+
+    def __init__(self, seed: int = 0) -> None:
+        super().__init__(seed)
+        self._current_node = "start"
+
+    @property
+    def name(self) -> str:
+        return "TroubleshootingGuide"
+
+    @property
+    def goal(self) -> str:
+        return "system issue resolved and documented"
+
+    @property
+    def oracle_steps(self) -> int:
+        return 5
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._current_node = "start"
+        self._state = self.STATE_DESCRIPTIONS[self._current_node]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        valid_transitions = list(self.GRAPH.get(self._current_node, {}).keys())
+        distractors = self.DISTRACTORS.get(self._current_node, [])
+        actions = valid_transitions + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.ORACLE_PATH.get(self._current_node)
+
+    def _execute(self, action: str) -> StepResult:
+        transitions = self.GRAPH.get(self._current_node, {})
+        if action in transitions:
+            self._current_node = transitions[action]
+            done = self._current_node == "documented"
+            return StepResult(state=self.STATE_DESCRIPTIONS[self._current_node], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not help diagnose the issue.)",
+            done=False,
+        )
+
+
+# ======================================================================
+# Stochastic environments
+# ======================================================================
+
+
+class NoisyDeployment(TextEnvironment):
+    """Deploy a service with stochastic failures.
+
+    Some actions have a probability of failing and returning to a previous
+    state. The agent must retry or adapt. This tests robustness to
+    non-deterministic transitions.
+
+    Optimal path (5 steps if no failures):
+        build_artifact -> run_integration_tests -> deploy_to_staging
+        -> run_smoke_tests -> promote_to_production
+    """
+
+    STAGES = [
+        "code_ready",
+        "artifact_built",
+        "tests_passed",
+        "staged",
+        "smoke_passed",
+        "in_production",
+    ]
+
+    OPTIMAL_PATH = [
+        "Build the deployment artifact from the latest release branch",
+        "Run the full integration test suite against the built artifact",
+        "Deploy the artifact to the staging environment for validation",
+        "Run smoke tests against the staging deployment to verify health",
+        "Promote the staging deployment to production with blue-green switch",
+    ]
+
+    # Probability that each step FAILS and reverts to previous state
+    FAILURE_PROBS: dict[int, float] = {
+        0: 0.0,    # build always succeeds
+        1: 0.1,    # integration tests: 10% flaky failure
+        2: 0.15,   # deploy to staging: 15% failure (infra issues)
+        3: 0.2,    # smoke tests: 20% failure (environment variance)
+        4: 0.1,    # promote: 10% failure (health check timeout)
+    }
+
+    FAILURE_MESSAGES: dict[int, str] = {
+        1: "Integration tests failed due to a flaky test. The test infrastructure had a transient network issue. You need to retry.",
+        2: "Staging deployment failed: the container orchestrator rejected the pod due to resource limits. You need to retry.",
+        3: "Smoke tests failed: the health check endpoint returned a 503 because the service was still initializing. You need to retry.",
+        4: "Production promotion failed: the load balancer health check timed out during the blue-green switch. You need to retry.",
+    }
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "code_ready": [
+            "Run the linter one more time before building",
+            "Update the version number in the changelog",
+            "Cherry-pick an additional commit into the release branch",
+            "Notify the team that a deployment is starting",
+        ],
+        "artifact_built": [
+            "Scan the artifact for known security vulnerabilities",
+            "Upload the artifact to a secondary registry as backup",
+            "Verify the artifact checksum matches the source hash",
+            "Tag the git commit with the artifact version number",
+        ],
+        "tests_passed": [
+            "Run performance benchmarks before deploying",
+            "Generate a test coverage report for the release",
+            "Compare test results with the previous release",
+            "Archive the test logs for compliance purposes",
+        ],
+        "staged": [
+            "Load test the staging environment with synthetic traffic",
+            "Compare staging metrics with production baseline",
+            "Send a preview link to the product team for review",
+            "Check that all feature flags are configured correctly",
+        ],
+        "smoke_passed": [
+            "Wait for the next maintenance window to promote",
+            "Run additional canary tests with a small traffic percentage",
+            "Get explicit approval from the release manager",
+            "Update the deployment documentation with current versions",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "code_ready": "Release branch v3.2.1 is ready with 12 commits. All CI checks passed. Ready to build the deployment artifact.",
+        "artifact_built": "Docker image built and pushed to registry: app:v3.2.1-rc1 (245MB). Build took 4 minutes. Ready for testing.",
+        "tests_passed": "All 1,247 integration tests passed in 12 minutes. Coverage: 91%. No regressions detected. Ready to deploy to staging.",
+        "staged": "Deployed to staging environment (staging.internal). 3 replicas running, health checks passing. Ready for smoke tests.",
+        "smoke_passed": "All 28 smoke tests passed on staging. API response times within SLA (p99 < 200ms). Ready for production promotion.",
+        "in_production": "Successfully promoted to production via blue-green deployment. All health checks passing. Zero-downtime deployment complete.",
+    }
+
+    def __init__(self, seed: int = 0) -> None:
+        super().__init__(seed)
+        self._stage_idx = 0
+
+    @property
+    def name(self) -> str:
+        return "NoisyDeployment"
+
+    @property
+    def goal(self) -> str:
+        return "service deployed to production successfully"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)  # Best case, no failures
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            # Check for stochastic failure
+            fail_prob = self.FAILURE_PROBS.get(self._stage_idx, 0.0)
+            # Use step_count to make failures reproducible but varied
+            roll = random.Random(self._seed * 1000 + self._step_count).random()
+            if roll < fail_prob:
+                # Failure: stay at current stage, different state text
+                fail_msg = self.FAILURE_MESSAGES.get(self._stage_idx, "Action failed. Retry needed.")
+                return StepResult(state=fail_msg, done=False)
+
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "in_production"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the deployment.)",
+            done=False,
+        )
+
+
+class UncertainDiagnosis(TextEnvironment):
+    """Diagnose a patient with probabilistic test results.
+
+    Test results are stochastic: a test may return inconclusive results,
+    requiring the agent to either retry or choose a different diagnostic path.
+
+    Optimal path (5 steps if no inconclusives):
+        take_history -> order_blood_work -> request_imaging
+        -> consult_specialist -> prescribe_treatment
+    """
+
+    STAGES = [
+        "patient_arrived",
+        "history_taken",
+        "blood_results",
+        "imaging_done",
+        "specialist_consulted",
+        "treatment_prescribed",
+    ]
+
+    OPTIMAL_PATH = [
+        "Take a detailed patient history including symptoms and medical background",
+        "Order comprehensive blood work including CBC and metabolic panel",
+        "Request diagnostic imaging to visualize the affected area",
+        "Consult with a specialist to interpret the combined findings",
+        "Prescribe the appropriate treatment plan based on the diagnosis",
+    ]
+
+    # Probability of getting inconclusive results
+    INCONCLUSIVE_PROBS: dict[int, float] = {
+        0: 0.0,     # history always works
+        1: 0.2,     # blood work: 20% inconclusive
+        2: 0.15,    # imaging: 15% inconclusive
+        3: 0.1,     # specialist: 10% needs more data
+        4: 0.0,     # prescription always works
+    }
+
+    INCONCLUSIVE_MESSAGES: dict[int, str] = {
+        1: "Blood work results are inconclusive: some values are borderline and need to be repeated. The lab recommends retesting in the same visit.",
+        2: "Imaging results are unclear: the initial scan did not provide sufficient contrast. A repeat scan with adjusted parameters is recommended.",
+        3: "The specialist requests additional information before making a recommendation. The current data is insufficient for a confident diagnosis.",
+    }
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "patient_arrived": [
+            "Prescribe medication based on the initial complaint alone",
+            "Refer the patient to a different department",
+            "Schedule a follow-up appointment for next week",
+            "Check the patient's insurance coverage first",
+        ],
+        "history_taken": [
+            "Order a full-body MRI scan as a precaution",
+            "Prescribe a general antibiotic while waiting for tests",
+            "Consult the patient's previous records from other hospitals",
+            "Administer a physical examination of unrelated systems",
+        ],
+        "blood_results": [
+            "Order genetic testing for hereditary conditions",
+            "Refer to a nutritionist for dietary assessment",
+            "Prescribe supplements based on the blood results alone",
+            "Request a second opinion on the blood work interpretation",
+        ],
+        "imaging_done": [
+            "Order additional advanced imaging sequences",
+            "Begin treatment based on imaging alone without specialist input",
+            "Request a pathology review of incidental findings",
+            "Schedule the patient for a biopsy procedure",
+        ],
+        "specialist_consulted": [
+            "Seek a second specialist opinion from another institution",
+            "Enroll the patient in a clinical trial",
+            "Recommend watchful waiting instead of active treatment",
+            "Order additional specialized testing",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "patient_arrived": "Patient presents with persistent chest discomfort and shortness of breath for 2 weeks. No prior cardiac history. Vitals: BP 145/90, HR 88, SpO2 96%.",
+        "history_taken": "History complete: 52-year-old, non-smoker, sedentary lifestyle, family history of heart disease. Symptoms worsen with exertion. No fever or cough. Need diagnostic workup.",
+        "blood_results": "Blood work results: elevated troponin (0.08 ng/mL), slightly elevated CRP, normal CBC. Lipid panel shows LDL 165 mg/dL. Findings suggest cardiac involvement.",
+        "imaging_done": "Chest X-ray and echocardiogram complete: mild left ventricular hypertrophy, no effusion, ejection fraction 52% (low-normal). Coronary artery disease suspected.",
+        "specialist_consulted": "Cardiology consultation complete: based on troponin elevation, imaging findings, and risk factors, diagnosis is stable angina with early coronary artery disease.",
+        "treatment_prescribed": "Treatment plan prescribed: antiplatelet therapy, statin, beta-blocker, lifestyle modifications. Follow-up stress test in 6 weeks. Diagnosis and treatment complete.",
+    }
+
+    def __init__(self, seed: int = 0) -> None:
+        super().__init__(seed)
+        self._stage_idx = 0
+
+    @property
+    def name(self) -> str:
+        return "UncertainDiagnosis"
+
+    @property
+    def goal(self) -> str:
+        return "patient diagnosed and treatment prescribed"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            # Check for inconclusive results
+            inc_prob = self.INCONCLUSIVE_PROBS.get(self._stage_idx, 0.0)
+            roll = random.Random(self._seed * 1000 + self._step_count).random()
+            if roll < inc_prob:
+                msg = self.INCONCLUSIVE_MESSAGES.get(self._stage_idx, "Results inconclusive. Retry needed.")
+                return StepResult(state=msg, done=False)
+
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "treatment_prescribed"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it was not the appropriate next step.)",
+            done=False,
+        )
+
+
+# ======================================================================
 # Registry
 # ======================================================================
 
 # Environments used for training trajectory generation
-# v2: expanded from 3 to 8 for better generalization
+# v2: expanded from 3 to 10 for better generalization
+# Includes linear, branching, and stochastic environments
 TRAIN_ENVIRONMENTS: list[type[TextEnvironment]] = [
     DocumentWorkflow,
     CodeReview,
@@ -1732,6 +2361,8 @@ TRAIN_ENVIRONMENTS: list[type[TextEnvironment]] = [
     BugTriage,
     OnboardingProcess,
     SecurityAudit,
+    ProjectPlanning,      # branching
+    NoisyDeployment,      # stochastic
 ]
 
 # Environments used ONLY for evaluation (never seen during training)
@@ -1741,6 +2372,8 @@ TEST_ENVIRONMENTS: list[type[TextEnvironment]] = [
     MeetingPreparation,
     ContentPublishing,
     ExperimentPipeline,
+    TroubleshootingGuide,  # branching (OOD)
+    UncertainDiagnosis,    # stochastic (OOD)
 ]
 
 # All environments

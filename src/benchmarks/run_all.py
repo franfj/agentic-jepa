@@ -27,7 +27,7 @@ from transformers import AutoTokenizer
 from ..model import AgenticJEPAModel
 from .baselines import BaseAgent, GPT2VanillaAgent, GreedyTextAgent, JEPAPlanningAgent, LLMBaselineAgent, OracleAgent, RandomAgent
 from .environments import TRAIN_ENVIRONMENTS, TEST_ENVIRONMENTS, TextEnvironment, make_all, make_train, make_test
-from .metrics import EpisodeLog, MetricResult, compute_episode_metrics
+from .metrics import EpisodeLog, MetricResult, compute_episode_metrics, compute_significance_matrix
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def build_agents(
 
 
 def run_benchmark(
-    episodes: int = 20,
+    episodes: int = 50,
     max_steps: int = 50,
     checkpoint: str | None = None,
     config_path: str | None = None,
@@ -284,15 +284,55 @@ def run_benchmark(
                     final[agent_name][env_name]["success_rate"] = float(arr.mean())
                     final[agent_name][env_name]["success_rate_std"] = float(arr.std())
 
+    # --- Statistical significance tests ---
+    # Collect per-episode success scores across all environments for each agent
+    agent_success_all: dict[str, list[float]] = defaultdict(list)
+    for agent_name, env_dict in results.items():
+        for env_name, metric_dict in env_dict.items():
+            successes = metric_dict.get("_successes", [])
+            assert isinstance(successes, list)
+            agent_success_all[agent_name].extend(successes)
+
+    if len(agent_success_all) >= 2:
+        try:
+            sig_results = compute_significance_matrix(dict(agent_success_all), test_type="bootstrap")
+            # Store significance in final results under a special key
+            final["__significance__"] = {}  # type: ignore[assignment]
+            for agent_a, comparisons in sig_results.items():
+                for agent_b, test_result in comparisons.items():
+                    key = f"{agent_a}_vs_{agent_b}"
+                    final["__significance__"][key] = test_result  # type: ignore[index]
+
+            # Print significance summary
+            logger.info("\n--- Significance Tests (bootstrap, success rate) ---")
+            # Find JEPA agents to compare against baselines
+            jepa_agents = [a for a in agent_success_all if "JEPA" in a and "Vanilla" not in a]
+            baseline_agents = [a for a in agent_success_all if a not in jepa_agents and a != "Oracle"]
+            for ja in jepa_agents:
+                for ba in baseline_agents:
+                    if ja in sig_results and ba in sig_results[ja]:
+                        r = sig_results[ja][ba]
+                        sig_marker = "***" if r.get("significant_at_001") else ("**" if r.get("significant_at_005") else "n.s.")
+                        logger.info(
+                            f"  {ja} > {ba}: delta={r['delta']:.3f}, "
+                            f"p={r['p_value']:.4f} {sig_marker}, "
+                            f"95% CI=[{r['ci_lower']:.3f}, {r['ci_upper']:.3f}]"
+                        )
+        except Exception as e:
+            logger.warning(f"Significance tests failed: {e}")
+
     # Wandb logging
     if wandb_log:
         import wandb
         for agent_name, env_dict in final.items():
+            if agent_name.startswith("__"):
+                continue
             for env_name, metrics_dict in env_dict.items():
                 for metric_name, value in metrics_dict.items():
-                    wandb.log({
-                        f"{agent_name}/{env_name}/{metric_name}": value,
-                    })
+                    if isinstance(value, (int, float)):
+                        wandb.log({
+                            f"{agent_name}/{env_name}/{metric_name}": value,
+                        })
         wandb.finish()
 
     return dict(final)
@@ -417,8 +457,8 @@ def main() -> None:
     parser.add_argument(
         "--episodes",
         type=int,
-        default=20,
-        help="Number of episodes per (agent, environment) pair.",
+        default=50,
+        help="Number of episodes per (agent, environment) pair (default: 50).",
     )
     parser.add_argument(
         "--max-steps",

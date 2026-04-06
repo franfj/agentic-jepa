@@ -85,7 +85,7 @@ echo "========================================"
 python -m src.benchmarks.run_all \
     --checkpoint outputs/default/best.pt \
     --config configs/default.yaml \
-    --episodes 20 \
+    --episodes 50 \
     --max-steps 50 \
     --rollout-depths 1 2 3 5 \
     --output results/v2_gpt2.json
@@ -147,7 +147,7 @@ python -m src.train \
 python -m src.benchmarks.run_all \
     --checkpoint outputs/qwen/best.pt \
     --config configs/qwen.yaml \
-    --episodes 20 \
+    --episodes 50 \
     --max-steps 50 \
     --rollout-depths 1 3 \
     --output results/v2_qwen.json

@@ -139,3 +139,132 @@ def compute_episode_metrics(log: EpisodeLog, oracle_steps: int) -> MetricResult:
         cumulative_similarity_auc=cumulative_similarity_auc(log),
         action_quality_mean=action_quality(log),
     )
+
+
+# ======================================================================
+# Statistical significance tests
+# ======================================================================
+
+
+def paired_bootstrap_test(
+    scores_a: list[float],
+    scores_b: list[float],
+    n_bootstrap: int = 10000,
+    seed: int = 42,
+) -> dict[str, float]:
+    """Paired bootstrap test: is agent A significantly better than B?
+
+    Tests H0: mean(A) <= mean(B) vs H1: mean(A) > mean(B).
+
+    Args:
+        scores_a: Per-episode scores for agent A (e.g., success 0/1).
+        scores_b: Per-episode scores for agent B.
+        n_bootstrap: Number of bootstrap resamples.
+        seed: Random seed.
+
+    Returns:
+        Dict with 'delta' (observed mean difference), 'p_value',
+        'ci_lower', 'ci_upper' (95% CI of the difference).
+    """
+    rng = np.random.RandomState(seed)
+    a = np.array(scores_a)
+    b = np.array(scores_b)
+    n = min(len(a), len(b))
+    a, b = a[:n], b[:n]
+
+    observed_delta = float(a.mean() - b.mean())
+
+    # Bootstrap the difference
+    deltas = np.empty(n_bootstrap)
+    for i in range(n_bootstrap):
+        idx = rng.randint(0, n, size=n)
+        deltas[i] = a[idx].mean() - b[idx].mean()
+
+    # One-sided p-value: fraction of bootstrap samples where A is not better
+    p_value = float(np.mean(deltas <= 0))
+
+    ci_lower = float(np.percentile(deltas, 2.5))
+    ci_upper = float(np.percentile(deltas, 97.5))
+
+    return {
+        "delta": observed_delta,
+        "p_value": p_value,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "significant_at_005": p_value < 0.05,
+        "significant_at_001": p_value < 0.01,
+    }
+
+
+def wilcoxon_signed_rank_test(
+    scores_a: list[float],
+    scores_b: list[float],
+) -> dict[str, float]:
+    """Wilcoxon signed-rank test for paired samples.
+
+    Non-parametric alternative to paired t-test. Tests whether the
+    distribution of differences is symmetric around zero.
+
+    Returns:
+        Dict with 'statistic', 'p_value', 'significant_at_005'.
+    """
+    from scipy import stats
+
+    a = np.array(scores_a)
+    b = np.array(scores_b)
+    n = min(len(a), len(b))
+    a, b = a[:n], b[:n]
+
+    # Remove tied pairs (difference = 0)
+    diff = a - b
+    nonzero = diff != 0
+
+    if nonzero.sum() < 5:
+        return {
+            "statistic": float("nan"),
+            "p_value": 1.0,
+            "significant_at_005": False,
+            "note": "Too few non-tied pairs for Wilcoxon test",
+        }
+
+    stat, p = stats.wilcoxon(a[nonzero], b[nonzero], alternative="greater")
+    return {
+        "statistic": float(stat),
+        "p_value": float(p),
+        "significant_at_005": p < 0.05,
+        "significant_at_001": p < 0.01,
+    }
+
+
+def compute_significance_matrix(
+    agent_episode_scores: dict[str, list[float]],
+    test_type: str = "bootstrap",
+) -> dict[str, dict[str, dict]]:
+    """Compute pairwise significance tests between all agents.
+
+    Args:
+        agent_episode_scores: {agent_name: [per_episode_scores]}.
+        test_type: "bootstrap" or "wilcoxon".
+
+    Returns:
+        Nested dict: result[agent_a][agent_b] = test_result.
+    """
+    agents = sorted(agent_episode_scores.keys())
+    results = {}
+
+    for a in agents:
+        results[a] = {}
+        for b in agents:
+            if a == b:
+                continue
+            if test_type == "wilcoxon":
+                results[a][b] = wilcoxon_signed_rank_test(
+                    agent_episode_scores[a],
+                    agent_episode_scores[b],
+                )
+            else:
+                results[a][b] = paired_bootstrap_test(
+                    agent_episode_scores[a],
+                    agent_episode_scores[b],
+                )
+    return results
