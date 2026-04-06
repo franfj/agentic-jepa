@@ -238,3 +238,68 @@ class AgenticJEPAModel(nn.Module):
         cos = nn.CosineSimilarity(dim=-1)
         scores = cos(predicted, s_goal.expand(predicted.size(0), -1))  # (N,)
         return scores
+
+    @torch.no_grad()
+    def score_actions_multistep(
+        self,
+        state_input_ids: torch.Tensor,
+        state_attention_mask: torch.Tensor,
+        action_input_ids: torch.Tensor,
+        action_attention_mask: torch.Tensor,
+        goal_input_ids: torch.Tensor,
+        goal_attention_mask: torch.Tensor,
+        rollout_depth: int = 1,
+    ) -> torch.Tensor:
+        """Score candidate actions with k-step lookahead rollouts.
+
+        For each candidate action, predicts the next state embedding, then
+        greedily rolls out (rollout_depth - 1) more steps by reusing the
+        predicted embedding as the new state. The final predicted state is
+        scored against the goal.
+
+        Args:
+            state_*: Current state text (B=1).
+            action_*: Candidate actions (N, L).
+            goal_*: Goal state text (B=1).
+            rollout_depth: Number of steps to look ahead (1 = original behavior).
+
+        Returns:
+            Scores tensor of shape (N,).
+        """
+        if rollout_depth <= 1:
+            return self.score_actions(
+                state_input_ids, state_attention_mask,
+                action_input_ids, action_attention_mask,
+                goal_input_ids, goal_attention_mask,
+            )
+
+        s_t = self.state_encoder(state_input_ids, state_attention_mask)  # (1, D)
+        s_goal = self.target_encoder(goal_input_ids, goal_attention_mask)  # (1, D)
+        a_all = self.action_encoder(action_input_ids, action_attention_mask)  # (N, D)
+
+        n_actions = a_all.size(0)
+        cos = nn.CosineSimilarity(dim=-1)
+
+        scores = torch.zeros(n_actions, device=s_t.device)
+
+        for i in range(n_actions):
+            # Step 1: predict next state for action i
+            s_curr = s_t  # (1, D)
+            a_i = a_all[i:i+1]  # (1, D)
+            s_pred = self.predictor(s_curr, a_i)  # (1, D)
+
+            # Steps 2..k: greedily pick best action at each simulated step
+            for _ in range(rollout_depth - 1):
+                # Score all actions from the predicted state
+                s_pred_expanded = s_pred.expand(n_actions, -1)  # (N, D)
+                next_preds = self.predictor(s_pred_expanded, a_all)  # (N, D)
+                goal_expanded = s_goal.expand(n_actions, -1)
+                step_scores = cos(next_preds, goal_expanded)  # (N,)
+                best_action_idx = step_scores.argmax()
+                # Advance to the best predicted state
+                s_pred = next_preds[best_action_idx:best_action_idx+1]  # (1, D)
+
+            # Final score: similarity of rolled-out state to goal
+            scores[i] = cos(s_pred, s_goal).item()
+
+        return scores

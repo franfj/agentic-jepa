@@ -1101,14 +1101,637 @@ class MeetingPreparation(TextEnvironment):
 
 
 # ======================================================================
+# New environments with rich natural language action descriptions
+# ======================================================================
+
+
+class BugTriage(TextEnvironment):
+    """Triage and fix a reported software bug.
+
+    Optimal path (6 steps):
+        reproduce_bug -> analyze_logs -> identify_root_cause -> write_fix
+        -> run_regression_tests -> deploy_hotfix
+    """
+
+    STAGES = [
+        "bug_reported",
+        "reproduced",
+        "logs_analyzed",
+        "root_cause_found",
+        "fix_written",
+        "tests_passed",
+        "hotfix_deployed",
+    ]
+
+    OPTIMAL_PATH = [
+        "Reproduce the bug by following the steps described in the report",
+        "Analyze the application logs to find error traces and stack dumps",
+        "Identify the root cause by tracing the error back to the faulty code path",
+        "Write a targeted code fix that addresses the root cause without side effects",
+        "Run the full regression test suite to verify the fix does not break anything",
+        "Deploy the hotfix to production through the standard release pipeline",
+    ]
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "bug_reported": [
+            "Close the bug report as a duplicate without checking",
+            "Reassign the ticket to another team member",
+            "Lower the priority of the bug to non-critical",
+            "Add a comment asking for more information",
+            "Mark the bug as works-on-my-machine",
+        ],
+        "reproduced": [
+            "Try to reproduce the bug on a different operating system",
+            "Record a screencast of the reproduction steps",
+            "Write a unit test for an unrelated feature",
+            "Update the bug report with screenshots",
+        ],
+        "logs_analyzed": [
+            "Enable verbose debug logging for all services",
+            "Search for similar errors in the knowledge base",
+            "Rotate the log files to free up disk space",
+            "Forward the logs to the security team for review",
+            "Archive old log entries to cold storage",
+        ],
+        "root_cause_found": [
+            "Refactor the surrounding code for better readability",
+            "Write a detailed technical design document about the issue",
+            "Add extra logging around the problem area for future debugging",
+            "Create a Jira epic to track the broader technical debt",
+        ],
+        "fix_written": [
+            "Rewrite the entire module from scratch",
+            "Add performance benchmarks for the changed code",
+            "Request a code review from three separate reviewers",
+            "Squash all commits into a single clean commit",
+            "Update the changelog with the fix details",
+        ],
+        "tests_passed": [
+            "Run a load test against the staging environment",
+            "Wait for the next scheduled release window",
+            "Send a notification to all stakeholders about the fix",
+            "Create a rollback plan in case the fix fails",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "bug_reported": "A critical bug report has been filed: users cannot save their work. 47 users affected in the last hour. No reproduction steps confirmed yet.",
+        "reproduced": "Bug reproduced consistently: clicking Save triggers a 500 error. The network tab shows the API returns an internal server error on POST /api/documents/save.",
+        "logs_analyzed": "Log analysis reveals a NullPointerException in DocumentService.save() at line 234. The error started after yesterday's deployment of version 2.14.0.",
+        "root_cause_found": "Root cause identified: a database migration in v2.14.0 added a NOT NULL constraint on the 'updated_by' column, but the save endpoint does not populate this field for anonymous users.",
+        "fix_written": "Fix implemented: the save endpoint now populates 'updated_by' with a default system user for anonymous sessions. The migration has been updated to allow NULL as a fallback.",
+        "tests_passed": "All 342 regression tests pass. The specific save scenario for anonymous users now works correctly. No existing tests broken.",
+        "hotfix_deployed": "Hotfix v2.14.1 deployed to production. Save functionality restored for all users. Error rate dropped to 0%. Bug resolved.",
+    }
+
+    @property
+    def name(self) -> str:
+        return "BugTriage"
+
+    @property
+    def goal(self) -> str:
+        return "bug fixed and hotfix deployed to production"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "hotfix_deployed"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not fix the bug.)",
+            done=False,
+        )
+
+
+class OnboardingProcess(TextEnvironment):
+    """Onboard a new employee through HR processes.
+
+    Optimal path (5 steps):
+        create_account -> assign_equipment -> schedule_orientation
+        -> set_up_workspace -> complete_checklist
+    """
+
+    STAGES = [
+        "hire_confirmed",
+        "account_created",
+        "equipment_assigned",
+        "orientation_scheduled",
+        "workspace_ready",
+        "onboarding_complete",
+    ]
+
+    OPTIMAL_PATH = [
+        "Create the employee's corporate accounts including email and Slack",
+        "Assign a laptop and necessary peripherals from the IT inventory",
+        "Schedule the two-day orientation program with HR and the team lead",
+        "Set up the physical workspace with desk, chair, and access badge",
+        "Complete and sign off the onboarding checklist with the manager",
+    ]
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "hire_confirmed": [
+            "Send a welcome email before accounts are ready",
+            "Post about the new hire on the company blog",
+            "Order business cards for the new employee",
+            "Schedule a team lunch for next month",
+            "Update the organizational chart",
+        ],
+        "account_created": [
+            "Grant admin access to all internal systems",
+            "Enroll the employee in all optional training courses",
+            "Set up a personal website for the employee",
+            "Create shared folders for every department",
+        ],
+        "equipment_assigned": [
+            "Order additional monitors as backup",
+            "Install non-standard software on the laptop",
+            "Ship equipment to a secondary office location",
+            "Purchase premium noise-canceling headphones",
+            "Set up a personal VPN profile",
+        ],
+        "orientation_scheduled": [
+            "Reschedule orientation to next quarter",
+            "Invite all company executives to the orientation",
+            "Create a custom orientation video",
+            "Prepare a 50-page onboarding manual",
+        ],
+        "workspace_ready": [
+            "Redesign the entire office floor plan",
+            "Order custom furniture for the workspace",
+            "Install additional security cameras near the desk",
+            "Rearrange the team seating arrangement",
+            "Set up a dedicated break room",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "hire_confirmed": "New hire confirmed: Maria Garcia, Software Engineer, starting next Monday. No accounts or equipment have been prepared yet.",
+        "account_created": "Corporate accounts created: maria.garcia@company.com, Slack, GitHub, and Jira access provisioned. MFA enrolled. Waiting for equipment.",
+        "equipment_assigned": "MacBook Pro and 27-inch monitor assigned from IT inventory. Serial numbers recorded. Software image ready to deploy on first day.",
+        "orientation_scheduled": "Two-day orientation scheduled for Monday-Tuesday: Day 1 company overview with HR, Day 2 team introduction with engineering lead.",
+        "workspace_ready": "Desk B-204 set up with ergonomic chair, dual monitors, and docking station. Building access badge #4521 programmed and ready.",
+        "onboarding_complete": "Onboarding checklist signed off by both the new hire and manager. Maria is fully set up and ready for her first day. Process complete.",
+    }
+
+    @property
+    def name(self) -> str:
+        return "OnboardingProcess"
+
+    @property
+    def goal(self) -> str:
+        return "new employee fully onboarded and ready to start"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "onboarding_complete"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the onboarding.)",
+            done=False,
+        )
+
+
+class SecurityAudit(TextEnvironment):
+    """Conduct a security audit of a web application.
+
+    Optimal path (6 steps):
+        scope_assessment -> vulnerability_scan -> manual_testing
+        -> risk_classification -> remediation_plan -> executive_report
+    """
+
+    STAGES = [
+        "audit_requested",
+        "scope_defined",
+        "scan_complete",
+        "manual_done",
+        "risks_classified",
+        "remediation_planned",
+        "report_delivered",
+    ]
+
+    OPTIMAL_PATH = [
+        "Define the scope of the assessment including target systems and testing boundaries",
+        "Run automated vulnerability scanners against all in-scope web endpoints",
+        "Perform manual penetration testing on critical authentication and authorization flows",
+        "Classify discovered vulnerabilities by risk level using CVSS scoring methodology",
+        "Develop a prioritized remediation plan with timelines for each finding",
+        "Write and deliver the executive summary report with findings and recommendations",
+    ]
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "audit_requested": [
+            "Start testing immediately without defining scope",
+            "Request budget approval for expensive third-party tools",
+            "Schedule the audit for next quarter instead",
+            "Review last year's audit report for reference",
+            "Notify all development teams about the upcoming audit",
+        ],
+        "scope_defined": [
+            "Expand scope to include all company infrastructure",
+            "Purchase additional security licenses",
+            "Set up a dedicated testing network",
+            "Create detailed documentation of all API endpoints",
+        ],
+        "scan_complete": [
+            "Re-run the scanner with more aggressive settings",
+            "Share raw scan results with the development team",
+            "Compare scan results with industry benchmarks",
+            "Set up continuous monitoring for new vulnerabilities",
+            "Archive scan results in the compliance database",
+        ],
+        "manual_done": [
+            "Attempt to exploit every finding for proof of concept",
+            "Document each testing step in exhaustive detail",
+            "Research zero-day vulnerabilities in the tech stack",
+            "Set up a bug bounty program for external testers",
+        ],
+        "risks_classified": [
+            "Reclassify all findings as critical to get faster action",
+            "Cross-reference findings with threat intelligence feeds",
+            "Calculate the potential financial impact of each risk",
+            "Create a risk dashboard for continuous monitoring",
+            "Present preliminary findings to the board of directors",
+        ],
+        "remediation_planned": [
+            "Begin implementing fixes before report approval",
+            "Hire additional consultants for remediation support",
+            "Schedule a follow-up audit for next month",
+            "Create training materials based on the findings",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "audit_requested": "Security audit requested for the customer-facing web application. No scope or testing plan has been defined yet.",
+        "scope_defined": "Audit scope defined: 3 web applications, 12 API endpoints, authentication system, and payment processing flow. Testing window: 2 weeks.",
+        "scan_complete": "Automated scan complete: 156 findings detected. 8 critical, 23 high, 45 medium, 80 low severity. Manual validation needed.",
+        "manual_done": "Manual testing complete: confirmed 6 of 8 critical findings. Discovered 2 additional IDOR vulnerabilities and a session fixation bug not caught by scanners.",
+        "risks_classified": "All 160 findings classified: 8 critical (CVSS 9.0+), 25 high (7.0-8.9), 47 medium (4.0-6.9), 80 low (<4.0). Critical findings affect payment flow.",
+        "remediation_planned": "Remediation plan complete: critical fixes within 48 hours, high within 2 weeks, medium within 30 days. Development team assigned to each finding.",
+        "report_delivered": "Executive report delivered to CISO and CTO. Contains findings summary, risk analysis, remediation timeline, and compliance impact. Audit complete.",
+    }
+
+    @property
+    def name(self) -> str:
+        return "SecurityAudit"
+
+    @property
+    def goal(self) -> str:
+        return "security audit completed with report delivered"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "report_delivered"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the audit.)",
+            done=False,
+        )
+
+
+class ContentPublishing(TextEnvironment):
+    """Publish a blog post through editorial workflow.
+
+    Optimal path (5 steps):
+        draft_article -> editorial_review -> add_media
+        -> seo_optimization -> publish_and_promote
+    """
+
+    STAGES = [
+        "topic_assigned",
+        "draft_ready",
+        "review_passed",
+        "media_added",
+        "seo_optimized",
+        "published",
+    ]
+
+    OPTIMAL_PATH = [
+        "Write the full article draft based on the assigned topic and target audience",
+        "Submit the draft for editorial review and incorporate all feedback",
+        "Add relevant images, diagrams, and alt text to support the article content",
+        "Optimize the article for search engines with keywords, meta tags, and internal links",
+        "Publish the article and share it across social media and newsletter channels",
+    ]
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "topic_assigned": [
+            "Research competitors' articles on the same topic",
+            "Create a detailed content calendar for the next quarter",
+            "Brainstorm ten alternative angles for the article",
+            "Set up analytics tracking before writing anything",
+            "Interview subject matter experts for background quotes",
+        ],
+        "draft_ready": [
+            "Rewrite the entire article in a different tone",
+            "Add footnotes and academic citations throughout",
+            "Translate the article into three additional languages",
+            "Create a companion podcast episode",
+        ],
+        "review_passed": [
+            "Request a second round of review from a different editor",
+            "Run the article through an AI writing detector",
+            "Create an infographic summarizing the key points",
+            "Record a video summary of the article",
+            "Fact-check every claim against primary sources",
+        ],
+        "media_added": [
+            "Commission custom illustrations from a designer",
+            "Create an interactive data visualization",
+            "Add animated GIFs to every section",
+            "Produce a short documentary about the topic",
+        ],
+        "seo_optimized": [
+            "Purchase backlinks from external websites",
+            "Rewrite the article to be exactly 2000 words",
+            "Create a separate landing page for the article",
+            "Set up A/B testing for the headline",
+            "Build a topic cluster with five supporting articles",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "topic_assigned": "New article assignment: 'How AI is Transforming Supply Chain Management'. Target: 1500 words, business audience. Deadline: Friday.",
+        "draft_ready": "Article draft complete at 1650 words. Covers three key use cases with industry examples. Needs editorial review.",
+        "review_passed": "Editorial review passed with minor revisions. Grammar corrected, flow improved, one section restructured. Ready for media.",
+        "media_added": "Three relevant images added with descriptive alt text. One process diagram created. Thumbnail designed for social sharing.",
+        "seo_optimized": "SEO optimized: primary keyword density at 1.5%, meta description written, 4 internal links added, URL slug finalized.",
+        "published": "Article published and promoted. Shared on LinkedIn, Twitter, and company newsletter. Analytics tracking confirmed. Content workflow complete.",
+    }
+
+    @property
+    def name(self) -> str:
+        return "ContentPublishing"
+
+    @property
+    def goal(self) -> str:
+        return "article published and promoted across channels"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "published"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the publishing process.)",
+            done=False,
+        )
+
+
+class ExperimentPipeline(TextEnvironment):
+    """Run a machine learning experiment from hypothesis to analysis.
+
+    Optimal path (6 steps):
+        formulate_hypothesis -> prepare_dataset -> train_model
+        -> evaluate_results -> statistical_testing -> write_findings
+    """
+
+    STAGES = [
+        "research_question",
+        "hypothesis_ready",
+        "dataset_prepared",
+        "model_trained",
+        "results_evaluated",
+        "significance_tested",
+        "findings_written",
+    ]
+
+    OPTIMAL_PATH = [
+        "Formulate a testable hypothesis with clear dependent and independent variables",
+        "Prepare and preprocess the dataset with proper train-validation-test splits",
+        "Train the model with the specified architecture and hyperparameters",
+        "Evaluate the trained model on the held-out test set using predefined metrics",
+        "Run statistical significance tests to validate the observed improvements",
+        "Write up the findings with tables, figures, and interpretation of results",
+    ]
+
+    DISTRACTORS_BY_STAGE: dict[str, list[str]] = {
+        "research_question": [
+            "Survey all related work before forming any hypothesis",
+            "Design the experiment for maximum publication impact",
+            "Choose the most complex model architecture available",
+            "Set up distributed training infrastructure first",
+            "Define twenty different metrics to track",
+        ],
+        "hypothesis_ready": [
+            "Revise the hypothesis to be less falsifiable",
+            "Add three additional hypotheses to test simultaneously",
+            "Review competing hypotheses from other research groups",
+            "Write the introduction section of the paper first",
+        ],
+        "dataset_prepared": [
+            "Augment the dataset with synthetic examples",
+            "Collect additional data from new sources",
+            "Visualize the entire dataset distribution",
+            "Create a custom data loader with advanced caching",
+            "Re-annotate ambiguous examples in the dataset",
+        ],
+        "model_trained": [
+            "Tune hyperparameters exhaustively with grid search",
+            "Train an ensemble of ten model variants",
+            "Profile the model's memory usage and inference speed",
+            "Distill the model into a smaller architecture",
+        ],
+        "results_evaluated": [
+            "Cherry-pick the best-performing checkpoint",
+            "Run the evaluation on a different random seed",
+            "Visualize attention patterns and model internals",
+            "Compare against twenty additional baselines",
+            "Compute per-class breakdown for all metrics",
+        ],
+        "significance_tested": [
+            "Apply Bayesian analysis in addition to frequentist tests",
+            "Compute effect sizes and confidence intervals",
+            "Run a meta-analysis across related studies",
+            "Create publication-quality plots for every metric",
+        ],
+    }
+
+    STATE_DESCRIPTIONS: dict[str, str] = {
+        "research_question": "Research question defined: Does adding contrastive pre-training improve downstream classification on low-resource datasets? No hypothesis formulated yet.",
+        "hypothesis_ready": "Hypothesis: Contrastive pre-training will improve F1 by at least 3 points on datasets with fewer than 1000 labeled examples, compared to the standard fine-tuning baseline.",
+        "dataset_prepared": "Dataset prepared: 3 low-resource classification benchmarks (800, 500, and 200 labeled examples). 80/10/10 train/val/test splits. Tokenization and feature extraction complete.",
+        "model_trained": "Model trained for 50 epochs. Training converged at epoch 38. Best validation F1: 0.72 (contrastive) vs 0.67 (baseline). Training logs and checkpoints saved.",
+        "results_evaluated": "Test set evaluation complete. Contrastive model: F1=0.71, Accuracy=0.74. Baseline: F1=0.66, Accuracy=0.69. Improvement of 5 F1 points across all three benchmarks.",
+        "significance_tested": "Paired t-test across 5 seeds: p=0.003 (significant at alpha=0.01). Effect size (Cohen's d) = 1.2 (large). Bootstrap confidence interval for F1 difference: [3.1, 6.8] points.",
+        "findings_written": "Findings written up: contrastive pre-training yields statistically significant improvements on low-resource classification. Tables, learning curves, and ablation results included. Experiment complete.",
+    }
+
+    @property
+    def name(self) -> str:
+        return "ExperimentPipeline"
+
+    @property
+    def goal(self) -> str:
+        return "experiment completed with findings written up"
+
+    @property
+    def oracle_steps(self) -> int:
+        return len(self.OPTIMAL_PATH)
+
+    def reset(self) -> str:
+        self._rng = random.Random(self._seed)
+        self._step_count = 0
+        self._done = False
+        self._stage_idx = 0
+        self._state = self.STATE_DESCRIPTIONS[self.STAGES[self._stage_idx]]
+        return self._state
+
+    def get_valid_actions(self) -> list[str]:
+        stage = self.STAGES[self._stage_idx]
+        optimal = [self.OPTIMAL_PATH[self._stage_idx]]
+        distractors = self.DISTRACTORS_BY_STAGE[stage]
+        actions = optimal + distractors
+        self._rng = random.Random(self._seed + self._step_count)
+        self._rng.shuffle(actions)
+        return actions
+
+    def get_oracle_action(self) -> str | None:
+        if self._done:
+            return None
+        return self.OPTIMAL_PATH[self._stage_idx]
+
+    def _execute(self, action: str) -> StepResult:
+        optimal = self.OPTIMAL_PATH[self._stage_idx]
+        if action == optimal:
+            self._stage_idx += 1
+            stage = self.STAGES[self._stage_idx]
+            done = stage == "findings_written"
+            return StepResult(state=self.STATE_DESCRIPTIONS[stage], done=done)
+        return StepResult(
+            state=self._state + f" (You tried '{action}' but it did not advance the experiment.)",
+            done=False,
+        )
+
+
+# ======================================================================
 # Registry
 # ======================================================================
 
 # Environments used for training trajectory generation
+# v2: expanded from 3 to 8 for better generalization
 TRAIN_ENVIRONMENTS: list[type[TextEnvironment]] = [
     DocumentWorkflow,
     CodeReview,
     EmailTriage,
+    DataPipeline,
+    ResearchTask,
+    BugTriage,
+    OnboardingProcess,
+    SecurityAudit,
 ]
 
 # Environments used ONLY for evaluation (never seen during training)
@@ -1116,13 +1739,12 @@ TEST_ENVIRONMENTS: list[type[TextEnvironment]] = [
     CustomerSupport,
     IncidentResponse,
     MeetingPreparation,
+    ContentPublishing,
+    ExperimentPipeline,
 ]
 
-# All environments (for backward compat)
-ALL_ENVIRONMENTS: list[type[TextEnvironment]] = TRAIN_ENVIRONMENTS + [
-    DataPipeline,
-    ResearchTask,
-] + TEST_ENVIRONMENTS
+# All environments
+ALL_ENVIRONMENTS: list[type[TextEnvironment]] = TRAIN_ENVIRONMENTS + TEST_ENVIRONMENTS
 
 
 def make_train(seed: int = 0) -> list[TextEnvironment]:

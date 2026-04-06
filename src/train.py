@@ -42,11 +42,13 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-def get_lr(step: int, warmup_steps: int, base_lr: float) -> float:
-    """Linear warmup learning rate schedule."""
+def get_lr(step: int, warmup_steps: int, max_steps: int, base_lr: float, min_lr: float = 1e-6) -> float:
+    """Linear warmup + cosine decay learning rate schedule."""
     if step < warmup_steps:
         return base_lr * (step + 1) / warmup_steps
-    return base_lr
+    # Cosine decay from base_lr to min_lr
+    progress = (step - warmup_steps) / max(1, max_steps - warmup_steps)
+    return min_lr + 0.5 * (base_lr - min_lr) * (1 + math.cos(math.pi * progress))
 
 
 def validate(
@@ -190,8 +192,8 @@ def train(config: dict, data_path: str) -> None:
 
         batch = {k: v.to(device) for k, v in batch.items()}
 
-        # Linear warmup LR schedule
-        lr = get_lr(global_step, warmup_steps, base_lr)
+        # Linear warmup + cosine decay LR schedule
+        lr = get_lr(global_step, warmup_steps, max_steps, base_lr)
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 

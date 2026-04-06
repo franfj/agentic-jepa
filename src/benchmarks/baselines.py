@@ -91,6 +91,7 @@ class JEPAPlanningAgent(BaseAgent):
         tokenizer: AutoTokenizer,
         max_length: int = 128,
         device: torch.device | None = None,
+        rollout_depth: int = 1,
     ) -> None:
         self._model = model
         self._tokenizer = tokenizer
@@ -98,10 +99,13 @@ class JEPAPlanningAgent(BaseAgent):
         self._tokenizer.padding_side = "left"
         self._max_length = max_length
         self._device = device or next(model.parameters()).device
+        self._rollout_depth = rollout_depth
         self._model.eval()
 
     @property
     def name(self) -> str:
+        if self._rollout_depth > 1:
+            return f"JEPA(k={self._rollout_depth})"
         return "JEPA"
 
     def _tokenize(self, texts: list[str]) -> dict[str, torch.Tensor]:
@@ -119,13 +123,14 @@ class JEPAPlanningAgent(BaseAgent):
         goal_tok = self._tokenize([goal])
         actions_tok = self._tokenize(valid_actions)
 
-        scores = self._model.score_actions(
+        scores = self._model.score_actions_multistep(
             state_input_ids=state_tok["input_ids"],
             state_attention_mask=state_tok["attention_mask"],
             action_input_ids=actions_tok["input_ids"],
             action_attention_mask=actions_tok["attention_mask"],
             goal_input_ids=goal_tok["input_ids"],
             goal_attention_mask=goal_tok["attention_mask"],
+            rollout_depth=self._rollout_depth,
         )
         best_idx = scores.argmax().item()
         return valid_actions[best_idx]
@@ -192,45 +197,79 @@ class LLMBaselineAgent(BaseAgent):
     """Zero-shot LLM baseline using OpenAI's GPT-4o-mini.
 
     Sends the current state, goal, and valid actions to the model and asks it
-    to pick the best action. Requires the ``openai`` package and a valid
-    ``OPENAI_API_KEY`` environment variable.
+    to pick the best action. Tracks cumulative cost and latency.
+    Requires the ``openai`` package and a valid ``OPENAI_API_KEY`` environment variable.
     """
 
+    # Pricing per 1M tokens (GPT-4o-mini, as of 2026)
+    INPUT_COST_PER_M = 0.15
+    OUTPUT_COST_PER_M = 0.60
+
     def __init__(self, model: str = "gpt-4o-mini") -> None:
+        import time
         from openai import OpenAI
 
         self._client = OpenAI()
         self._model = model
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+        self._total_latency_ms = 0.0
+        self._total_calls = 0
 
     @property
     def name(self) -> str:
         return "LLM (GPT-4o-mini)"
 
+    @property
+    def total_cost_usd(self) -> float:
+        return (
+            self._total_input_tokens * self.INPUT_COST_PER_M / 1_000_000
+            + self._total_output_tokens * self.OUTPUT_COST_PER_M / 1_000_000
+        )
+
+    @property
+    def avg_latency_ms(self) -> float:
+        return self._total_latency_ms / max(self._total_calls, 1)
+
     def select_action(self, state: str, valid_actions: list[str], goal: str) -> str:
+        import time
+
         numbered = "\n".join(f"{i}: {a}" for i, a in enumerate(valid_actions))
         prompt = (
             f"You are an agent navigating an environment.\n\n"
             f"Current state: {state}\n"
             f"Goal: {goal}\n\n"
             f"Valid actions:\n{numbered}\n\n"
-            f"Pick the best action to make progress toward the goal. "
-            f"Respond with ONLY the action number."
+            f"Pick the single best action to make progress toward the goal. "
+            f"Respond with ONLY the action number (a single integer)."
         )
 
+        start = time.monotonic()
         response = self._client.chat.completions.create(
             model=self._model,
             max_tokens=16,
+            temperature=0.0,
             messages=[{"role": "user", "content": prompt}],
         )
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        # Track usage
+        self._total_calls += 1
+        self._total_latency_ms += elapsed_ms
+        if response.usage:
+            self._total_input_tokens += response.usage.prompt_tokens
+            self._total_output_tokens += response.usage.completion_tokens
 
         text = response.choices[0].message.content.strip()
+
         # Parse the number from the response
-        try:
-            idx = int(text)
+        # Handle cases like "0", "Action 0", "The best action is 0"
+        import re
+        numbers = re.findall(r'\d+', text)
+        if numbers:
+            idx = int(numbers[0])
             if 0 <= idx < len(valid_actions):
                 return valid_actions[idx]
-        except ValueError:
-            pass
 
         # Fallback: check if the response matches an action directly
         for action in valid_actions:

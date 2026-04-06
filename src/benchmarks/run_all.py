@@ -83,6 +83,7 @@ def build_agents(
     seed: int = 0,
     gpt2_vanilla_agent: GPT2VanillaAgent | None = None,
     llm_agent: LLMBaselineAgent | None = None,
+    rollout_depths: list[int] | None = None,
 ) -> list[BaseAgent]:
     """Build the standard set of agents for evaluation.
 
@@ -95,10 +96,14 @@ def build_agents(
         seed: Random seed for the random agent.
         gpt2_vanilla_agent: Pre-created GPT2VanillaAgent to reuse across calls.
         llm_agent: Pre-created LLMBaselineAgent to reuse across calls (optional).
+        rollout_depths: List of rollout depths for JEPA agents (default: [1]).
 
     Returns:
         List of agent instances.
     """
+    if rollout_depths is None:
+        rollout_depths = [1]
+
     agents: list[BaseAgent] = [
         RandomAgent(seed=seed),
         GreedyTextAgent(),
@@ -110,14 +115,16 @@ def build_agents(
     if llm_agent is not None:
         agents.append(llm_agent)
     if model is not None and tokenizer is not None:
-        agents.append(
-            JEPAPlanningAgent(
-                model=model,
-                tokenizer=tokenizer,
-                max_length=max_length,
-                device=device,
+        for depth in rollout_depths:
+            agents.append(
+                JEPAPlanningAgent(
+                    model=model,
+                    tokenizer=tokenizer,
+                    max_length=max_length,
+                    device=device,
+                    rollout_depth=depth,
+                )
             )
-        )
     agents.append(OracleAgent(env))
     return agents
 
@@ -128,6 +135,7 @@ def run_benchmark(
     checkpoint: str | None = None,
     config_path: str | None = None,
     wandb_log: bool = False,
+    rollout_depths: list[int] | None = None,
 ) -> dict[str, dict[str, dict[str, float]]]:
     """Run the full benchmark: all agents x all environments x N episodes.
 
@@ -230,6 +238,7 @@ def run_benchmark(
                 seed=seed,
                 gpt2_vanilla_agent=gpt2_vanilla,
                 llm_agent=llm_agent,
+                rollout_depths=rollout_depths,
             )
 
             for agent in agents:
@@ -428,6 +437,13 @@ def main() -> None:
         default=None,
         help="Path to save results as JSON.",
     )
+    parser.add_argument(
+        "--rollout-depths",
+        type=int,
+        nargs="+",
+        default=[1],
+        help="Rollout depths for JEPA multi-step planning (e.g., --rollout-depths 1 2 3 5).",
+    )
     args = parser.parse_args()
 
     results = run_benchmark(
@@ -436,6 +452,7 @@ def main() -> None:
         checkpoint=args.checkpoint,
         config_path=args.config,
         wandb_log=args.wandb,
+        rollout_depths=args.rollout_depths,
     )
 
     print_results_table(results)
