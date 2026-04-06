@@ -96,7 +96,8 @@ def cumulative_similarity_auc(log: EpisodeLog) -> float:
     sims = sklearn_cosine(goal_vec, state_vecs).flatten()
 
     # Trapezoidal AUC normalized by number of intervals
-    auc = float(np.trapz(sims, dx=1.0) / max(len(sims) - 1, 1))
+    _trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+    auc = float(_trapz(sims, dx=1.0) / max(len(sims) - 1, 1))
     return auc
 
 
