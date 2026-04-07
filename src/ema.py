@@ -20,4 +20,7 @@ class EMAUpdater:
     @staticmethod
     def update(source: nn.Module, target: nn.Module, momentum: float) -> None:
         for src_p, tgt_p in zip(source.parameters(), target.parameters()):
+            # Skip quantized parameters (int8/uint8) that cannot be interpolated
+            if not tgt_p.data.is_floating_point():
+                continue
             tgt_p.data.mul_(momentum).add_(src_p.data, alpha=1.0 - momentum)
