@@ -180,9 +180,13 @@ def run_benchmark(
         )
         if not quantize:
             model = model.to(device)
+        else:
+            model.predictor = model.predictor.to(device)
+            model.target_encoder = model.target_encoder.to(device)
+            model.loss_fn = model.loss_fn.to(device)
 
-        ckpt = torch.load(checkpoint, map_location=device, weights_only=True)
-        model.load_state_dict(ckpt["model"])
+        ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model"], strict=not quantize)
         model.eval()
 
         tokenizer = AutoTokenizer.from_pretrained(backbone)
