@@ -129,7 +129,7 @@ class JEPAPredictor(nn.Module):
         Returns:
             Predicted next state embedding (B, D_s).
         """
-        combined = torch.cat([state, action], dim=-1)  # (B, D_s + D_a)
+        combined = torch.cat([state, action], dim=-1).float()  # (B, D_s + D_a)
         h = self.proj_in(combined).unsqueeze(1)  # (B, 1, hidden)
         h = self.transformer(h)  # (B, 1, hidden)
         return self.proj_out(h.squeeze(1))  # (B, D_s)
