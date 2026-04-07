@@ -106,6 +106,12 @@ def train(config: dict, data_path: str) -> None:
     )
     if not quantize:
         model = model.to(device)
+    else:
+        # With quantization, backbones are already on GPU via device_map.
+        # Move predictor, target encoder, and loss to the same device.
+        model.predictor = model.predictor.to(device)
+        model.target_encoder = model.target_encoder.to(device)
+        model.loss_fn = model.loss_fn.to(device)
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
